@@ -1,6 +1,6 @@
 package com.example.config;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
@@ -23,23 +23,29 @@ public class AppConfig {
 
     @Bean
     public RedisCacheManager cacheManager(RedisConnectionFactory connectionFactory) {
-        return RedisCacheManager.create(connectionFactory);
-    }
-
-    @Bean
-    public RedisCacheConfiguration cacheConfiguration(ObjectMapper objectMapper) {
-        return RedisCacheConfiguration.defaultCacheConfig()
+        RedisCacheConfiguration config = RedisCacheConfiguration.defaultCacheConfig()
                 .disableCachingNullValues()
-                .serializeValuesWith(RedisSerializationContext.SerializationPair.fromSerializer(new GenericJackson2JsonRedisSerializer(objectMapper)));
+                .prefixCacheNameWith("springboot-redis-cache:")
+                .serializeKeysWith(RedisSerializationContext.SerializationPair.fromSerializer(new StringRedisSerializer()))
+                .serializeValuesWith(RedisSerializationContext.SerializationPair.fromSerializer(new GenericJackson2JsonRedisSerializer()));
+        return RedisCacheManager.builder(connectionFactory).cacheDefaults(config).build();
     }
 
     @Bean
+    @ConditionalOnMissingBean(name = "redisTemplate")
     @Primary
-    public RedisTemplate<String, Object> redisTemplate(ObjectMapper objectMapper, RedisConnectionFactory redisConnectionFactory) {
+    public <T> RedisTemplate<String, T> redisTemplate(RedisConnectionFactory redisConnectionFactory) {
 
-        RedisTemplate<String, Object> template = new RedisTemplate<>();
+        GenericJackson2JsonRedisSerializer serializer = new GenericJackson2JsonRedisSerializer();
+        StringRedisSerializer stringRedisSerializer = new StringRedisSerializer();
+
+        RedisTemplate<String, T> template = new RedisTemplate<>();
         template.setConnectionFactory(redisConnectionFactory);
-        template.setDefaultSerializer(new GenericJackson2JsonRedisSerializer(objectMapper));
+        template.setKeySerializer(stringRedisSerializer);
+        template.setValueSerializer(serializer);
+        template.setDefaultSerializer(serializer);
+        template.setEnableTransactionSupport(true);
+        template.afterPropertiesSet();
         return template;
     }
 }
